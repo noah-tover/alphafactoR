@@ -1,0 +1,411 @@
+---
+title: "Introduction to alphafactoR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to alphafactoR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(alphafactoR)
+```
+
+alphaFactoR is a financial analysis framework in R built on top of the xts library. 
+It is designed with the goal of providing the utmost convenience in analyzing financial factors for the purpose of factor investing.
+
+The first step is to define your factor(s). Two methods are supported:
+A.) Define a list of several xts objects, each of equal dimensions.
+B.) Define a single xts object.
+
+For the former method, one may have several functions which estimate a factor. In this case, the factorapply() function will conveniently call these functions and store their results in a list.
+
+It is often crucial to use data which was not available at the time a decision needs to be made in many simulations. If this is the case, the argument lag should be specified as TRUE. This argument pushes the data back by one period.
+
+It is not uncommon for functions to have different lookback periods. This results in rows full of NAs. Several functions involving weights depend on all factors beginning at the same row. By calling trim_max_lookback(), this dependency is fulfilled.
+
+Here's an example with the momentum factor and volatility factor, using functions from the TTR library:
+
+```{r}
+library(TTR)
+data(assets)
+price_data <- assets
+str(price_data)
+
+#An xts object on 2015-01-02 / 2022-12-30 containing: 
+#  Data:    double [2014, 21]
+#  Columns: JPM.Adjusted, BAC.Adjusted, C.Adjusted, WFC.Adjusted, GS.Adjusted ... #with 16 more columns
+#  Index:   Date [2014] (TZ: "UTC")
+#  xts Attributes:
+#    $ src    : chr "yahoo"
+#    $ updated: POSIXct[1:1], format: "2024-05-10 00:09:31"
+
+# This demonstrates the structure of these functions. To avoid complication via looping, I will only use a single column.
+
+str(TTR::momentum(head(price_data[,1]), n = 5))
+str(TTR::volatility(price_data[,1], n = 10))
+
+# An xts object on 2015-01-02 / 2015-01-09 containing: 
+#  Data:    double [2014, 1]
+#  Columns: JPM.Adjusted
+#  Index:   Date [2014] (TZ: "UTC")
+#  xts Attributes:
+#    $ src    : chr "yahoo"
+#    $ updated: POSIXct[1:1], format: "2024-05-10 00:09:31"
+
+# Now, I will call these functions on all columns and store each result in a list.
+functions <- list('momentum', 
+                  'volatility')
+
+arguments <- list(list(n = 5),
+                  list(n = 10))
+
+factor_list <- factorapply(price = price_data,
+                           functions = functions,
+                           arguments = arguments, 
+                           lag = FALSE)
+
+str(factor_list)
+# List of 2
+# $ :An xts object on 2015-01-02 / 2022-12-30 containing: 
+#  Data:    double [2014, 21]
+#  Columns: JPM.Adjusted_momentum, BAC.Adjusted_momentum, C.Adjusted_momentum, #WFC.Adjusted_momentum, GS.Adjusted_momentum ... with 16 more columns
+#  Index:   Date [2014] (TZ: "UTC")
+# $ :An xts object on 2015-01-02 / 2022-12-30 containing: 
+#  Data:    double [2014, 21]
+#  Columns: JPM.Adjusted_volatility, BAC.Adjusted_volatility, #C.Adjusted_volatility, WFC.Adjusted_volatility, GS.Adjusted_volatility ... with #16 more columns
+#  Index:   Date [2014] (TZ: "UTC")
+#
+trimmed_list <- trim_max_lookback(factor_list = factor_list)
+
+str(trimmed_list)
+#List of 2
+# $ :An xts object on 2015-01-15 / 2022-12-30 containing: 
+#  Data:    double [2005, 21]
+#  Columns: JPM.Adjusted_momentum, BAC.Adjusted_momentum, C.Adjusted_momentum, #WFC.Adjusted_momentum, GS.Adjusted_momentum ... with 16 more columns
+#  Index:   Date [2005] (TZ: "UTC")
+# $ :An xts object on 2015-01-15 / 2022-12-30 containing: 
+#  Data:    double [2005, 21]
+#  Columns: JPM.Adjusted_volatility, BAC.Adjusted_volatility, #C.Adjusted_volatility, WFC.Adjusted_volatility, GS.Adjusted_volatility ... with #16 more columns
+#  Index:   Date [2005] (TZ: "UTC")
+```
+
+To add data of a lower periodicity to this list, simply match the index of any other xts in the list of factors. Here's an example:
+
+```{r}
+data(dummy_finances)
+financial_data <- dummy_finances
+head(financial_data)
+
+#              JPM.Adjusted BAC.Adjusted C.Adjusted WFC.Adjusted GS.Adjusted
+# 2015-01-02    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+# 2015-04-02    0.4705737    0.1288731  0.4044287    0.4184484    1.603951
+# 2015-07-02    0.5284336    0.1416533  0.4322104    0.4396476    1.757206
+# 2015-10-02    0.4793530    0.1283407  0.3896869    0.3997789    1.491947
+# 2017-10-02    0.7991396    0.2202494  0.5883680    0.4591263    2.086406
+# 2018-01-02    0.8960285    0.2581389  0.5953816    0.5091761    2.223593
+#              MS.Adjusted USB.Adjusted PNC.Adjusted COF.Adjusted STI.Adjusted
+# 2015-01-02   0.3002070    0.3293217    0.6791521    0.6925181           NA
+# 2015-04-02   0.2804648    0.3229234    0.7015311    0.6769136           NA
+# 2015-07-02   0.3045643    0.3241132    0.7294241    0.7480486           NA
+# 2015-10-02   0.2463893    0.3046524    0.6701398    0.6202216           NA
+# 2017-10-02   0.4004469    0.4187913    1.0751802    0.7632970           NA
+# 2018-01-02   0.4293122    0.4257771    1.1572633    0.8889519           NA
+#              FITB.Adjusted KEY.Adjusted MTB.Adjusted RF.Adjusted CFG.Adjusted
+# 2015-01-02     0.1479108   0.09800460    0.9727789  0.07737988    0.1782928
+# 2015-04-02     0.1398613   0.10122865    0.9926145  0.07090399    0.1780265
+# 2015-07-02     0.1551728   0.10766818    0.9881279  0.07644560    0.1970774
+# 2015-10-02     0.1394327   0.09317808    0.9208768  0.06674299    0.1705854
+# 2017-10-02     0.2187707   0.14216062    1.3303162  0.11964993    0.2814306
+# 2018-01-02     0.2401189   0.15259653    1.4173824  0.13719809    0.3242477
+#              HBAN.Adjusted ZION.Adjusted CMA.Adjusted HOOD.Adjusted
+# 2015-01-02    0.07309164     0.2261885    0.3340302            NA
+# 2015-04-02    0.07726755     0.2170839    0.3307199            NA
+# 2015-07-02    0.07985312     0.2527568    0.3747715            NA
+# 2015-10-02    0.07484929     0.2196502    0.3048189            NA
+# 2017-10-02    0.10463723     0.3872694    0.5806350            NA
+# 2018-01-02    0.10964605     0.4167504    0.6581086            NA
+#              SOFI.Adjusted ALLY.Adjusted
+# 2015-01-02            NA     0.1908830
+# 2015-04-02            NA     0.1660238
+# 2015-07-02            NA     0.1834575
+# 2015-10-02            NA     0.1637639
+# 2017-10-02            NA     0.2014768
+# 2018-01-02            NA     0.2439277
+
+
+matched_data <- merge(financial_data, index(trimmed_list[[1]]))
+matched_data <- na.locf(matched_data)
+matched_data <- matched_data[index(trimmed_list[[1]])]
+head(matched_data)
+
+#                JPM.Adjusted BAC.Adjusted C.Adjusted WFC.Adjusted GS.Adjusted
+# 2015-01-15    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+# 2015-01-16    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+# 2015-01-20    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+# 2015-01-21    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+# 2015-01-22    0.4826832    0.1479819  0.4230553    0.4182316    1.622805
+
+#                MS.Adjusted USB.Adjusted PNC.Adjusted COF.Adjusted STI.Adjusted
+# 2015-01-02    0.300207    0.3293217    0.6791521    0.6925181           NA
+# 2015-01-15    0.300207    0.3293217    0.6791521    0.6925181           NA
+# 2015-01-16    0.300207    0.3293217    0.6791521    0.6925181           NA
+# 2015-01-20    0.300207    0.3293217    0.6791521    0.6925181           NA
+# 2015-01-21    0.300207    0.3293217    0.6791521    0.6925181           NA
+# 2015-01-22    0.300207    0.3293217    0.6791521    0.6925181           NA
+
+#                FITB.Adjusted KEY.Adjusted MTB.Adjusted RF.Adjusted CFG.Adjusted
+# 2015-01-02     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+# 2015-01-15     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+# 2015-01-16     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+# 2015-01-20     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+# 2015-01-21     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+# 2015-01-22     0.1479108    0.0980046    0.9727789  0.07737988    0.1782928
+
+#                HBAN.Adjusted ZION.Adjusted CMA.Adjusted HOOD.Adjusted
+# 2015-01-02    0.07309164     0.2261885    0.3340302            NA
+# 2015-01-15    0.07309164     0.2261885    0.3340302            NA
+# 2015-01-16    0.07309164     0.2261885    0.3340302            NA
+# 2015-01-20    0.07309164     0.2261885    0.3340302            NA
+# 2015-01-21    0.07309164     0.2261885    0.3340302            NA
+# 2015-01-22    0.07309164     0.2261885    0.3340302            NA
+
+#                SOFI.Adjusted ALLY.Adjusted
+# 2015-01-02            NA      0.190883
+# 2015-01-15            NA      0.190883
+# 2015-01-16            NA      0.190883
+# 2015-01-20            NA      0.190883
+# 2015-01-21            NA      0.190883
+# 2015-01-22            NA      0.190883
+
+
+trimmed_list[[3]] <- matched_data
+```
+
+To weight a factor means to assign some level of importance to it. Because these levels of importance might change through time, it may make sense to change the weightings of our estimated factor scores through time as well. Therefore, weights arguments of any function within alphafactoR may be specified as an xts object. If the weights are static, it is simpler and more efficient to specify them as a vector or list object. Here are two example variables containing weights:
+
+```{r}
+# weights must sum to one for each row or within the list
+# The number of columns of a weights xts or length of a weights list must not
+# exceed the length of factor_list as each weight refers to a factor xts within.
+
+# Creating dummy weights
+dates <- index(trimmed_list[[1]])
+random_matrix <- matrix(runif(length(dates) * 3), ncol = 3)
+normalized_matrix <- random_matrix / rowSums(random_matrix)
+weights_xts <- xts(normalized_matrix, order.by = dates)
+colnames(weights_xts) <- c("weight1", "weight2", "weight3")
+head(weights_xts)
+
+#           weight1   weight2    weight3
+# 2015-01-02 0.4074328 0.3420431 0.25052405
+# 2015-01-05 0.1918023 0.4219085 0.38628920
+# 2015-01-06 0.6432043 0.2875939 0.06920178
+# 2015-01-07 0.4192008 0.5342926 0.04650657
+# 2015-01-08 0.1435649 0.1599804 0.69645465
+# 2015-01-09 0.3751414 0.3910010 0.23385765
+
+
+weights <- c(1/3, 1/3, 1/3)
+
+```
+
+Sometimes factors may not meet the assumptions needed for certain scoring methods such as quantile bucketing, which assumes a normal distribution. Furthermore, different weighting methods have their own assumptions.
+
+A simple solution to this issue is ranking each factor. This can be performed with the factor_rank function. This function can perform weighted and non-weighted rankings, and does so if the weights argument is specified.
+
+Here's an example of some non parametrically estimated raw scores of our factor data:
+
+```{r}
+# Probably should cook these first! 
+raw_scores <- factor_rank(factor_list = trimmed_list, weights = weights_xts)
+head(raw_scores)
+
+#                JPM.Adjusted_momentum BAC.Adjusted_momentum C.Adjusted_momentum
+# 2015-01-15              11.79812             12.065652           11.398635
+# 2015-01-16              11.61928              6.739921           10.981088
+# 2015-01-20              13.58493              9.449534           11.548596
+# 2015-01-21              10.20802             10.120324            8.959169
+# 2015-01-22              12.70690             10.362791           12.363899
+# 2015-01-23              13.93518              5.881228           13.000000
+
+#                WFC.Adjusted_momentum GS.Adjusted_momentum MS.Adjusted_momentum
+# 2015-01-15              7.956801             9.132813             8.089285
+# 2015-01-16             11.799793            12.955527             8.384114
+# 2015-01-20             10.038202            11.870908             7.887617
+# 2015-01-21             11.544350             6.630933             6.210293
+# 2015-01-22              8.894915            10.210028             5.269264
+# 2015-01-23             14.202307            16.036911             7.788502
+
+#                USB.Adjusted_momentum PNC.Adjusted_momentum COF.Adjusted_momentum
+# 2015-01-15              6.557312              8.244551              8.078650
+# 2015-01-16              9.555369             12.907918             12.666496
+# 2015-01-20              7.657944             12.699182             10.403269
+# 2015-01-21             11.251124             13.794363              7.630880
+# 2015-01-22              9.979099             10.601812              6.301724
+# 2015-01-23             12.856670             16.152856             12.067646
+
+#                STI.Adjusted_momentum FITB.Adjusted_momentum
+# 2015-01-15                    NA              11.010636
+# 2015-01-16                    NA               7.568278
+# 2015-01-20                    NA               6.985283
+# 2015-01-21                    NA               8.871475
+# 2015-01-22                    NA               5.303554
+# 2015-01-23                    NA               2.587870
+
+#                KEY.Adjusted_momentum MTB.Adjusted_momentum RF.Adjusted_momentum
+# 2015-01-15              8.789719             10.354583             7.734703
+# 2015-01-16              7.057126             12.634931             5.558627
+# 2015-01-20              7.367058             12.750231             6.981895
+# 2015-01-21             10.787326              8.711537             9.079387
+# 2015-01-22             11.585099             13.597766             9.630947
+# 2015-01-23              7.916987             13.359329             2.453730
+
+#                CFG.Adjusted_momentum HBAN.Adjusted_momentum
+# 2015-01-15              5.524749               9.411830
+# 2015-01-16              7.637800               5.790399
+# 2015-01-20              4.881193               6.016709
+# 2015-01-21              7.293172               9.246415
+# 2015-01-22              6.636101               6.182864
+# 2015-01-23              7.081861               2.768633
+
+#                ZION.Adjusted_momentum CMA.Adjusted_momentum
+# 2015-01-15              10.166754              12.47610
+# 2015-01-16               8.860310              11.56202
+# 2015-01-20               7.806659              12.42301
+# 2015-01-21               8.459090              12.28973
+# 2015-01-22               8.487526              12.78063
+# 2015-01-23               6.523051              11.09723
+
+#                HOOD.Adjusted_momentum SOFI.Adjusted_momentum
+# 2015-01-15                     NA                     NA
+# 2015-01-16                     NA                     NA
+# 2015-01-20                     NA                     NA
+# 2015-01-21                     NA                     NA
+# 2015-01-22                     NA                     NA
+# 2015-01-23                     NA                     NA
+
+#                ALLY.Adjusted_momentum
+# 2015-01-15              12.209101
+# 2015-01-16               6.721009
+# 2015-01-20              10.647781
+# 2015-01-21               9.912412
+# 2015-01-22              10.105085
+# 2015-01-23               5.290009
+
+```
+
+We should probably cook these first! ;)
+
+In all seriousness, these scores are not all that interesting on their own for analysis. To develop a better measure, we can bucket them. This means to place these raw scores within discrete groups. The factor_bucket() function is useful for this purpose.
+
+At present, factor_buckets() supports three different bucketing methods:
+1.) proximal bucketing places raw scores in buckets based on their proximity to eachother.
+2.) balanced bucketing places an equal or nearly equal amount of raw scores in each bucket.
+3.) fixed bucketed places data in buckets based off predefined intervals; this may be useful for bounded data like correlation coefficients.
+
+Proximal bucketing will allow for the most accurate metric of a stock's standing on a factor in this case. Here's an example:
+
+```{r}
+factor_scores <- factor_bucket(factor_data = raw_scores,
+                               method = 'proximal',
+                               width = 3)
+head(factor_scores)
+
+#                JPM.Adjusted_momentum BAC.Adjusted_momentum C.Adjusted_momentum
+# 2015-01-15                     3                     3                   3
+# 2015-01-16                     3                     1                   3
+# 2015-01-20                     3                     2                   3
+# 2015-01-21                     2                     2                   2
+# 2015-01-22                     3                     2                   3
+# 2015-01-23                     3                     1                   3
+
+#                WFC.Adjusted_momentum GS.Adjusted_momentum MS.Adjusted_momentum
+# 2015-01-15                     2                    2                    2
+# 2015-01-16                     3                    3                    2
+# 2015-01-20                     2                    3                    2
+# 2015-01-21                     3                    1                    1
+# 2015-01-22                     2                    2                    1
+# 2015-01-23                     3                    3                    2
+
+#                USB.Adjusted_momentum PNC.Adjusted_momentum COF.Adjusted_momentum
+# 2015-01-15                     1                     2                     2
+# 2015-01-16                     2                     3                     3
+# 2015-01-20                     1                     3                     2
+# 2015-01-21                     2                     3                     1
+# 2015-01-22                     2                     2                     1
+# 2015-01-23                     3                     3                     3
+
+#                STI.Adjusted_momentum FITB.Adjusted_momentum
+# 2015-01-15                    NA                      3
+# 2015-01-16                    NA                      1
+# 2015-01-20                    NA                      1
+# 2015-01-21                    NA                      2
+# 2015-01-22                    NA                      1
+# 2015-01-23                    NA                      1
+
+#                KEY.Adjusted_momentum MTB.Adjusted_momentum RF.Adjusted_momentum
+# 2015-01-15                     2                     3                    1
+# 2015-01-16                     1                     3                    1
+# 2015-01-20                     1                     3                    1
+# 2015-01-21                     2                     1                    2
+# 2015-01-22                     3                     3                    2
+# 2015-01-23                     2                     3                    1
+
+#                CFG.Adjusted_momentum HBAN.Adjusted_momentum
+# 2015-01-15                     1                      2
+# 2015-01-16                     1                      1
+# 2015-01-20                     1                      1
+# 2015-01-21                     1                      2
+# 2015-01-22                     1                      1
+# 2015-01-23                     2                      1
+
+#                ZION.Adjusted_momentum CMA.Adjusted_momentum
+# 2015-01-15                      3                     3
+# 2015-01-16                      2                     3
+# 2015-01-20                      2                     3
+# 2015-01-21                      1                     3
+# 2015-01-22                      2                     3
+# 2015-01-23                      1                     2
+
+#                HOOD.Adjusted_momentum SOFI.Adjusted_momentum
+# 2015-01-15                     NA                     NA
+# 2015-01-16                     NA                     NA
+# 2015-01-20                     NA                     NA
+# 2015-01-21                     NA                     NA
+# 2015-01-22                     NA                     NA
+# 2015-01-23                     NA                     NA
+
+#                ALLY.Adjusted_momentum
+# 2015-01-15                      3
+# 2015-01-16                      1
+# 2015-01-20                      2
+# 2015-01-21                      2
+# 2015-01-22                      2
+# 2015-01-23                      1
+
+```
+
+In order to analyze these scores, we must identify a return series associated with each level within the scores. Essentially, we must take the average of a set of forward returns associated with each score. We can do this with the bucket_performance() function. Here's an example:
+
+```{r}
+lagged <- lag(assets, k = -10)
+fwdrets <- (lagged - assets) / assets
+fwdrets <- fwdrets[index(factor_scores)]
+factor_performance <- bucket_performance(factor_buckets = factor_scores,
+                                         forward_returns = fwdrets, 
+                                         average_func = 'median')
+head(factor_performance)
+
+#                     1            2            3
+# 2015-01-15 0.023693583  0.023659333 -0.010879413
+# 2015-01-16 0.005201724 -0.006456834  0.003522081
+# 2015-01-20 0.053072618  0.019573641  0.034916349
+# 2015-01-21 0.012167215  0.032701754  0.035031791
+# 2015-01-22 0.012919685  0.002903337  0.019892394
+# 2015-01-23 0.049953672  0.052355670  0.023254709
+
+
+```
+
+
