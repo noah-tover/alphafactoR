@@ -7,3 +7,4 @@ Planned Additions:
 4) Add an analysis function for common factor analyses all at once (violin plots, turnover statistics, etc..)
 5) Expand upon weighting functionality and compatibility.
 6) Integrate with quantstrat for backtesting of signal based strategies on top and bottom scoring assets.
+7) Replace weighting loop with matrix multiplication for speed up.
